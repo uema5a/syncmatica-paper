@@ -112,6 +112,11 @@ public final class MetadataCodec {
         String dim = buf.readUtf();
         int rotation = buf.readInt();
         int mirror = buf.readInt();
+        // Validate the vanilla Rotation(0..3)/Mirror(0..2) ordinals so a bad value can't be
+        // rebroadcast and crash other clients' rendering when they index the enum arrays.
+        if (rotation < 0 || rotation > 3 || mirror < 0 || mirror > 2) {
+            throw new IllegalStateException("rotation/mirror ordinal out of range: " + rotation + "/" + mirror);
+        }
         p.setOrigin(new ServerPosition(xyz[0], xyz[1], xyz[2], dim));
         p.setRotation(rotation);
         p.setMirror(mirror);
@@ -127,6 +132,9 @@ public final class MetadataCodec {
                 int[] spos = buf.readBlockPos();
                 int rot = buf.readInt();
                 int mir = buf.readInt();
+                if (rot < 0 || rot > 3 || mir < 0 || mir > 2) {
+                    throw new IllegalStateException("sub-region rotation/mirror ordinal out of range");
+                }
                 srd.put(new SubRegionModification(name, spos[0], spos[1], spos[2], rot, mir));
             }
         }

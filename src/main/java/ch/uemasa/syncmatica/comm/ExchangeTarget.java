@@ -1,13 +1,12 @@
 package ch.uemasa.syncmatica.comm;
 
-import ch.uemasa.syncmatica.Reference;
 import ch.uemasa.syncmatica.SyncmaticaContext;
 import ch.uemasa.syncmatica.comm.exchange.Exchange;
 import ch.uemasa.syncmatica.net.PacketType;
+import ch.uemasa.syncmatica.net.RawChannel;
 import ch.uemasa.syncmatica.net.SyncByteBuf;
 import ch.uemasa.syncmatica.net.SyncmaticaPacket;
 import org.bukkit.entity.Player;
-import org.bukkit.plugin.Plugin;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -18,14 +17,12 @@ public final class ExchangeTarget {
 
     private final Player player;
     private final SyncmaticaContext context;
-    private final Plugin plugin;
     private final List<Exchange> exchanges = new ArrayList<>();
     private FeatureSet featureSet = new FeatureSet(EnumSet.noneOf(Feature.class));
 
     public ExchangeTarget(Player player, SyncmaticaContext context) {
         this.player = player;
         this.context = context;
-        this.plugin = context.plugin;
     }
 
     public Player getPlayer() {
@@ -66,6 +63,11 @@ public final class ExchangeTarget {
         if (context.config.isDebugLogging()) {
             context.logger.info("Syncmatica send " + packet.type() + " to " + player.getName());
         }
-        player.sendPluginMessage(plugin, Reference.CHANNEL, packet.encode());
+        try {
+            RawChannel.send(player, packet.encode());
+        } catch (Throwable t) {
+            // Contain a failed send so one bad connection can't abort a broadcast to everyone else.
+            context.logger.warning("Failed to send Syncmatica packet to " + player.getName() + ": " + t);
+        }
     }
 }
