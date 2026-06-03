@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="SyncmaticaPaper" width="128">
+</p>
+
 # SyncmaticaPaper
 
 SyncmaticaPaper brings [Syncmatica](https://github.com/sakura-ryoko/syncmatica) to Paper and Purpur
