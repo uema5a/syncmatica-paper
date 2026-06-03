@@ -1,0 +1,30 @@
+# SyncmaticaPaper configuration.
+
+# Syncmatica protocol version advertised to clients during the handshake.
+# Must not reduce to "0.1" (client skips feature negotiation) or be "0.0.1".
+protocol-version: "0.3.18"
+
+# Protocol features advertised to clients; CORE is always implied.
+features:
+  - CORE
+  - FEATURE
+  - MODIFY
+  - MESSAGE
+  - QUOTA
+  - DEBUG
+  - CORE_EX
+  - VERSION
+  - DISPLAY_NAME
+
+# Upload quota per player, in bytes. Counters reset on server restart.
+quota:
+  enabled: false
+  limit: 40000000
+
+permissions:
+  # false = open (everyone may share/download/modify/remove); true = require syncmatica.* nodes.
+  enforce: false
+
+# Log every Syncmatica packet type sent/received (diagnostics).
+debug:
+  doPackageLogging: false

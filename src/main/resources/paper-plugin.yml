@@ -1,0 +1,27 @@
+name: SyncmaticaPaper
+version: '${version}'
+main: ch.uemasa.syncmatica.SyncmaticaPlugin
+api-version: '26.1'
+description: Server-side schematic sharing for Litematica clients (Syncmatica-compatible).
+website: https://uemasa.ch
+authors:
+  - uemasa
+# Commands are registered via the Brigadier API at runtime (see SyncmaticaCommand),
+# so there is no `commands:` block here.
+permissions:
+  # Only enforced when permissions.enforce is true in config.yml (default: open).
+  syncmatica.command:
+    description: Use the /syncmatica admin command.
+    default: op
+  syncmatica.share:
+    description: Share (upload) a schematic to the server.
+    default: op
+  syncmatica.download:
+    description: Download a shared schematic from the server.
+    default: op
+  syncmatica.modify:
+    description: Modify a shared placement.
+    default: op
+  syncmatica.remove:
+    description: Remove a shared placement.
+    default: op
