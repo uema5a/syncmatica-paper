@@ -31,6 +31,15 @@ public final class SyncmaticaPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // Without the reflective NMS transport the plugin can receive but never reply, so clients would
+        // hang mid-handshake. Disable rather than run with a non-functional send path.
+        if (!ch.uemasa.syncmatica.net.RawChannel.isAvailable()) {
+            getLogger().severe("Syncmatica NMS transport did not resolve — disabling the plugin. "
+                    + "This build likely does not match the server's Minecraft version.");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
         saveDefaultConfig();
         PluginConfig config = PluginConfig.load(getConfig());
 

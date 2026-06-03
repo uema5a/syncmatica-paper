@@ -29,6 +29,10 @@ import java.util.UUID;
  */
 public final class ServerCommunicationManager {
 
+    // Upper bound on concurrent exchanges per client. Each in-flight upload holds an open stream and
+    // buffer, so an uncapped client could open many and exhaust file handles until the stale sweep.
+    private static final int MAX_EXCHANGES_PER_TARGET = 16;
+
     private final SyncmaticaContext context;
 
     private final Map<UUID, ExchangeTarget> targets = new HashMap<>();
@@ -72,17 +76,29 @@ public final class ServerCommunicationManager {
         broadcastTargets.remove(target);
     }
 
-    public void startExchange(ExchangeTarget target, Exchange exchange) {
+    /** @return true if the exchange was started; false if the per-target cap refused it. */
+    public boolean startExchange(ExchangeTarget target, Exchange exchange) {
+        if (target.getExchanges().size() >= MAX_EXCHANGES_PER_TARGET) {
+            context.logger.warning("Refusing a new Syncmatica exchange for " + target.getPlayer().getName()
+                    + ": too many concurrent exchanges (" + target.getExchanges().size() + ").");
+            return false;
+        }
         target.getExchanges().add(exchange);
         exchange.init();
         if (exchange.isFinished()) {
             target.getExchanges().remove(exchange);
         }
+        return true;
     }
 
     public void onPacket(Player player, byte[] raw) {
         ExchangeTarget target = targets.get(player.getUniqueId());
         if (target == null) {
+            // A packet with no active handshake target: normally just a pre-handshake/post-quit race.
+            if (context.config.isDebugLogging()) {
+                context.logger.info("Syncmatica recv from " + player.getName()
+                        + " with no active target (pre-handshake or post-quit).");
+            }
             return;
         }
         // The exchange currently being driven, so a throw mid-handle closes only that exchange.
@@ -181,7 +197,10 @@ public final class ServerCommunicationManager {
             return;
         }
         downloading.put(hash, new ArrayList<>());
-        startExchange(target, new DownloadExchange(target, context, placement));
+        if (!startExchange(target, new DownloadExchange(target, context, placement))) {
+            // Refused by the cap: drop the placeholder we just added so the hash isn't stuck "downloading".
+            downloading.remove(hash);
+        }
     }
 
     private void handleRemove(ExchangeTarget target, SyncByteBuf buf) {
