@@ -35,12 +35,12 @@ public final class SyncmaticaPlugin extends JavaPlugin {
         PluginConfig config = PluginConfig.load(getConfig());
 
         Path dataFolder = getDataFolder().toPath();
-        Path litematicFolder = dataFolder.resolve("litematics");
+        Path blobFolder = dataFolder.resolve("syncmatics");
         Path placementsFile = dataFolder.resolve("placements.json");
 
         PlayerIdentifierProvider players = new PlayerIdentifierProvider();
         SyncmaticManager syncManager = new SyncmaticManager(placementsFile, players, getLogger());
-        FileStorage fileStorage = new FileStorage(litematicFolder);
+        FileStorage fileStorage = new FileStorage(blobFolder);
         QuotaService quota = new QuotaService(config.isQuotaEnabled(), config.getQuotaLimit());
 
         context = new SyncmaticaContext(this, config, players, syncManager, fileStorage, quota);

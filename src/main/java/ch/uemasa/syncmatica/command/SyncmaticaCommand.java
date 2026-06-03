@@ -27,6 +27,8 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -130,7 +132,9 @@ public final class SyncmaticaCommand {
     private int loadAll(com.mojang.brigadier.context.CommandContext<CommandSourceStack> ctx) {
         var source = ctx.getSource();
         var sender = source.getSender();
-        Path importDir = context.plugin.getDataFolder().toPath().resolve("import");
+        // Like upstream, admins drop .litematic files straight into the storage folder; loading adopts
+        // each new one as a managed blob by renaming it to <hash>.litematic.
+        Path blobDir = context.fileStorage.getFolder();
         ServerPosition origin = originOf(source.getLocation());
         PlayerIdentifier owner = source.getExecutor() instanceof Player player
                 ? context.players.createOrGet(player.getUniqueId(), player.getName())
@@ -138,42 +142,54 @@ public final class SyncmaticaCommand {
 
         int count = 0;
         try {
-            Files.createDirectories(importDir);
-            Files.createDirectories(context.fileStorage.getFolder());
-            try (DirectoryStream<Path> files = Files.newDirectoryStream(importDir, "*.litematic")) {
+            Files.createDirectories(blobDir);
+            // Snapshot the listing first: we rename files below, so we must not mutate the directory
+            // while its stream is open.
+            List<Path> candidates = new ArrayList<>();
+            try (DirectoryStream<Path> files = Files.newDirectoryStream(blobDir, "*.litematic")) {
                 for (Path file : files) {
-                    UUID hash;
-                    try (InputStream in = Files.newInputStream(file)) {
-                        hash = Checksum.ofStream(in);
-                    }
-                    String fileName = FileNameSanitizer.normalize(file.getFileName().toString());
-                    String fallback = fileName.endsWith(".litematic")
-                            ? fileName.substring(0, fileName.length() - ".litematic".length())
-                            : fileName;
-                    LitematicPeek.Info info = null;
-                    try {
-                        info = LitematicPeek.read(file);
-                    } catch (Exception e) {
-                        context.logger.warning("Could not read litematic metadata from " + fileName + ": " + e.getMessage());
-                    }
-                    String display = info != null && info.name() != null && !info.name().isBlank()
-                            ? info.name() : fallback;
-                    ServerPlacement placement = new ServerPlacement(UUID.randomUUID(), hash, fileName, display, owner);
-                    if (info != null) {
-                        placement.setLitematicVersion(info.litematicVersion());
-                        placement.setDataVersion(info.dataVersion());
-                    }
-                    placement.setOrigin(origin);
-                    Files.copy(file, context.fileStorage.getFile(placement), StandardCopyOption.REPLACE_EXISTING);
-                    context.comms().publishPlacement(placement);
-                    count++;
+                    candidates.add(file);
                 }
+            }
+            for (Path file : candidates) {
+                UUID hash;
+                try (InputStream in = Files.newInputStream(file)) {
+                    hash = Checksum.ofStream(in);
+                }
+                // Already a managed blob for an existing placement — skip (don't double-register).
+                if (context.syncManager.getAll().stream().anyMatch(p -> p.getHash().equals(hash))) {
+                    continue;
+                }
+                String fileName = FileNameSanitizer.normalize(file.getFileName().toString());
+                String fallback = fileName.endsWith(".litematic")
+                        ? fileName.substring(0, fileName.length() - ".litematic".length())
+                        : fileName;
+                LitematicPeek.Info info = null;
+                try {
+                    info = LitematicPeek.read(file);
+                } catch (Exception e) {
+                    context.logger.warning("Could not read litematic metadata from " + fileName + ": " + e.getMessage());
+                }
+                String display = info != null && info.name() != null && !info.name().isBlank()
+                        ? info.name() : fallback;
+                ServerPlacement placement = new ServerPlacement(UUID.randomUUID(), hash, fileName, display, owner);
+                if (info != null) {
+                    placement.setLitematicVersion(info.litematicVersion());
+                    placement.setDataVersion(info.dataVersion());
+                }
+                placement.setOrigin(origin);
+                Path target = context.fileStorage.getFile(placement);
+                if (!file.equals(target)) {
+                    Files.move(file, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                context.comms().publishPlacement(placement);
+                count++;
             }
         } catch (Exception e) {
             sender.sendMessage(Component.text("Load failed: " + e.getMessage(), NamedTextColor.RED));
             return 0;
         }
-        sender.sendMessage(Component.text("Loaded " + count + " syncmatic file(s) from import/.",
+        sender.sendMessage(Component.text("Loaded " + count + " syncmatic file(s) from syncmatics/.",
                 NamedTextColor.GREEN));
         return Command.SINGLE_SUCCESS;
     }

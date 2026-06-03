@@ -49,7 +49,7 @@ All subcommands require the `syncmatica.command` permission (op by default).
 | --- | --- |
 | `/syncmatica list` | List the placements currently shared on the server. |
 | `/syncmatica remove <id>` | Remove a shared placement (tab-completes the id). |
-| `/syncmatica load` | Import every `.litematic` file dropped in `plugins/SyncmaticaPaper/import/` and share it at your position. |
+| `/syncmatica load` | Import every `.litematic` file dropped in `plugins/SyncmaticaPaper/syncmatics/` and share it at your position. |
 | `/syncmatica reload` | Reload `config.yml`. |
 
 ## Configuration
