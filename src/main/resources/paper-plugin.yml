@@ -1,7 +1,7 @@
 name: SyncmaticaPaper
 version: '${version}'
 main: ch.uemasa.syncmatica.SyncmaticaPlugin
-api-version: '26.1'
+api-version: '1.20'
 # All protocol state is confined to a single plugin-owned thread (see SyncmaticaContext#execute),
 # so the plugin is safe under Folia's regionised multithreading.
 folia-supported: true

@@ -17,10 +17,13 @@ repositories {
 }
 
 dependencies {
-    // Paper API for MC 26.1.x. Unobfuscated since 26.1 — no remapping needed.
-    // New (2026) version scheme: <year>.<drop>.<patch>.build.<n>-<channel>.
-    // Pinned to the latest stable build for reproducible builds; bump as needed.
-    compileOnly("io.papermc.paper:paper-api:26.1.2.build.68-stable")
+    // One jar serves every supported server. We compile against the 1.21.1 API (the lowest version
+    // whose command API is stable, so no experimental opt-in is needed) and ship with api-version '1.20',
+    // which loads on 1.20.5+ through 26.x. Paper has been Mojang-mapped at runtime since 1.20.5, so the
+    // reflective NMS transport in RawChannel resolves by Mojang names with no remapping; the per-version
+    // NMS shape differences (ResourceLocation/Identifier, DiscardedPayload ByteBuf/byte[]) are handled at
+    // runtime there. Verified to enable cleanly on Paper/Folia 1.20.6, Paper 1.21.1, and Folia 26.1.2.
+    compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
 
     // Bundled (shaded + relocated) so the plugin's own JSON handling never clashes
     // with whatever Gson version the server or other plugins ship.
@@ -33,14 +36,15 @@ dependencies {
 }
 
 java {
-    // MC 26.1 servers run on Java 25; compile against the same toolchain.
-    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
+    // Target Java 21: it's what 1.20.6/1.21.x servers run on, and a release-21 jar also runs on 26.x's
+    // Java 25. (Going higher would lock out the 1.20.6/1.21.x line, which never gets Java 25.)
+    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
 }
 
 tasks {
     compileJava {
         options.encoding = "UTF-8"
-        options.release.set(25)
+        options.release.set(21)
     }
 
     test {
@@ -74,6 +78,6 @@ tasks {
 
     runServer {
         // The Paper version the dev server will download and launch.
-        minecraftVersion("26.1.2")
+        minecraftVersion("1.21.1")
     }
 }
