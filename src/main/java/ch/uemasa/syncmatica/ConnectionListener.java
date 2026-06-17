@@ -1,6 +1,7 @@
 package ch.uemasa.syncmatica;
 
 import ch.uemasa.syncmatica.comm.ServerCommunicationManager;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -21,20 +22,25 @@ public final class ConnectionListener implements Listener {
         this.comms = comms;
     }
 
+    // Each handler hands off to the single protocol thread: on Folia these events fire on the player's
+    // region thread, so onChannelRegistered/onPlayerQuit must not touch the shared state directly.
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        comms.onChannelRegistered(event.getPlayer());
+        Player player = event.getPlayer();
+        comms.execute(() -> comms.onChannelRegistered(player));
     }
 
     @EventHandler
     public void onRegisterChannel(PlayerRegisterChannelEvent event) {
         if (Reference.CHANNEL.equals(event.getChannel())) {
-            comms.onChannelRegistered(event.getPlayer());
+            Player player = event.getPlayer();
+            comms.execute(() -> comms.onChannelRegistered(player));
         }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        comms.onPlayerQuit(event.getPlayer());
+        Player player = event.getPlayer();
+        comms.execute(() -> comms.onPlayerQuit(player));
     }
 }

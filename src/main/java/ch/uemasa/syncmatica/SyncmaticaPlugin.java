@@ -13,9 +13,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.Messenger;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.nio.file.Path;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Plugin entry point. Wires the server-side Syncmatica services and registers the channel,
@@ -24,10 +27,11 @@ import java.nio.file.Path;
 public final class SyncmaticaPlugin extends JavaPlugin {
 
     private static final long EXCHANGE_TIMEOUT_MILLIS = 60_000L;
-    private static final long SWEEP_PERIOD_TICKS = 20L * 20L;
+    private static final long SWEEP_PERIOD_SECONDS = 20L;
 
     private SyncmaticaContext context;
-    private BukkitTask staleSweepTask;
+    private ScheduledExecutorService protocolExecutor;
+    private ScheduledFuture<?> staleSweepTask;
 
     @Override
     public void onEnable() {
@@ -52,7 +56,17 @@ public final class SyncmaticaPlugin extends JavaPlugin {
         FileStorage fileStorage = new FileStorage(blobFolder);
         QuotaService quota = new QuotaService(config.isQuotaEnabled(), config.getQuotaLimit());
 
-        context = new SyncmaticaContext(this, config, players, syncManager, fileStorage, quota);
+        // A single thread owns all protocol state. Both Paper and Folia deliver the plugin's events,
+        // commands, and plugin messages on threads we don't control (several region threads at once on
+        // Folia), so confining every state mutation to this one thread keeps the existing single-threaded
+        // model correct without sprinkling locks through the protocol code.
+        protocolExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "Syncmatica-Protocol");
+            t.setDaemon(true);
+            return t;
+        });
+
+        context = new SyncmaticaContext(this, config, players, syncManager, fileStorage, quota, protocolExecutor);
         ServerCommunicationManager comms = new ServerCommunicationManager(context);
         context.setComms(comms);
 
@@ -73,15 +87,22 @@ public final class SyncmaticaPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ConnectionListener(comms), this);
         new SyncmaticaCommand(context).register(this);
 
-        staleSweepTask = getServer().getScheduler().runTaskTimer(
-                this, () -> comms.sweepStaleExchanges(EXCHANGE_TIMEOUT_MILLIS),
-                SWEEP_PERIOD_TICKS, SWEEP_PERIOD_TICKS);
+        // Run the sweep on the same protocol thread that owns the exchanges it reaps, so it never races
+        // packet handling. The body is guarded because a ScheduledExecutorService silently cancels a
+        // periodic task that throws, which would stop sweeping for the rest of the session.
+        staleSweepTask = protocolExecutor.scheduleWithFixedDelay(() -> {
+            try {
+                comms.sweepStaleExchanges(EXCHANGE_TIMEOUT_MILLIS);
+            } catch (Throwable t) {
+                getLogger().warning("Syncmatica stale sweep failed: " + t);
+            }
+        }, SWEEP_PERIOD_SECONDS, SWEEP_PERIOD_SECONDS, TimeUnit.SECONDS);
 
         // On /reload, online players already fired PlayerRegisterChannelEvent before the listener
         // existed, so re-handshake anyone already listening on the channel.
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (p.getListeningPluginChannels().contains(Reference.CHANNEL)) {
-                comms.onChannelRegistered(p);
+                comms.execute(() -> comms.onChannelRegistered(p));
             }
         }
 
@@ -92,8 +113,23 @@ public final class SyncmaticaPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         if (staleSweepTask != null) {
-            staleSweepTask.cancel();
+            staleSweepTask.cancel(false);
             staleSweepTask = null;
+        }
+        // Stop accepting new protocol work and let in-flight tasks drain, so the save() below reads a
+        // quiescent placement set that no protocol task is still mutating.
+        if (protocolExecutor != null) {
+            protocolExecutor.shutdown();
+            try {
+                if (!protocolExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    getLogger().warning("Syncmatica protocol thread did not drain within 5s; forcing shutdown.");
+                    protocolExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                protocolExecutor.shutdownNow();
+            }
+            protocolExecutor = null;
         }
         if (context != null) {
             context.syncManager.save();

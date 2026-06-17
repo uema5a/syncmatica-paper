@@ -2,6 +2,9 @@ name: SyncmaticaPaper
 version: '${version}'
 main: ch.uemasa.syncmatica.SyncmaticaPlugin
 api-version: '26.1'
+# All protocol state is confined to a single plugin-owned thread (see SyncmaticaContext#execute),
+# so the plugin is safe under Folia's regionised multithreading.
+folia-supported: true
 description: Server-side schematic sharing for Litematica clients (Syncmatica-compatible).
 website: https://uemasa.ch
 authors:
