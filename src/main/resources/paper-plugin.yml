@@ -1,7 +1,7 @@
 name: SyncmaticaPaper
 version: '${version}'
 main: ch.uemasa.syncmatica.SyncmaticaPlugin
-api-version: '26.1'
+api-version: '26.2'
 description: Server-side schematic sharing for Litematica clients (Syncmatica-compatible).
 website: https://uemasa.ch
 authors:
