@@ -21,6 +21,9 @@ public final class ChannelMessageListener implements PluginMessageListener {
         if (!Reference.CHANNEL.equals(channel)) {
             return;
         }
-        comms.onPacket(player, message);
+        // On Folia this fires on the player's region thread (several players in parallel); hand off to the
+        // single protocol thread so all connection/exchange state stays single-threaded. message is already
+        // a private copy from Bukkit and the player reference is stable, so both are safe to capture.
+        comms.execute(() -> comms.onPacket(player, message));
     }
 }

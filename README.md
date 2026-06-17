@@ -4,9 +4,10 @@
 
 # SyncmaticaPaper
 
-SyncmaticaPaper brings [Syncmatica](https://github.com/sakura-ryoko/syncmatica) to Paper and Purpur
-servers, so litematica schematics and their placements can be shared on the server. Players join with
-the normal Litematica + Syncmatica mods — nothing extra is needed on their side. For Minecraft 26.1+.
+SyncmaticaPaper brings [Syncmatica](https://github.com/sakura-ryoko/syncmatica) to Paper servers (and
+Paper forks like Purpur and Folia), so litematica schematics and their placements can be shared on the
+server. Players join with the normal Litematica + Syncmatica mods — nothing extra is needed on their
+side. For Minecraft 26.1+.
 
 ### Notice — please use with caution
 
@@ -18,11 +19,15 @@ config and grant the `syncmatica.*` nodes as you see fit.
 
 ### Server
 
-1. Requirements: a Paper or Purpur server for Minecraft 26.1+. Building the plugin needs JDK 25.
+1. Requirements: a Paper, Purpur or Folia server for Minecraft 26.1+. Building the plugin needs JDK 25.
 2. Build it with `./gradlew build` (on Windows, `gradlew.bat build`). The jar is written to
    `build/libs/syncmatica-paper-<version>.jar`.
 3. Drop that jar into your server's `plugins/` folder and restart the server.
 4. On first start it creates `plugins/SyncmaticaPaper/` with a `config.yml` and the folders it uses.
+
+It also runs on [Folia](https://github.com/PaperMC/Folia) — drop in the same jar and start, no extra
+setup needed. All of the plugin's work is kept on one thread, so it stays out of the way of Folia's
+regionised threading (and behaves exactly the same on regular Paper).
 
 ### Client
 

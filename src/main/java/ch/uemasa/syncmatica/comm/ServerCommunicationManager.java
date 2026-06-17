@@ -52,6 +52,12 @@ public final class ServerCommunicationManager {
         this.context = context;
     }
 
+    /** Schedules protocol work on the single thread that owns this manager's state; see
+     * {@link SyncmaticaContext#execute}. Entry points (plugin messages, events) bridge through here. */
+    public void execute(Runnable task) {
+        context.execute(task);
+    }
+
     /** Called when a client registers the channel; starts the handshake. */
     public void onChannelRegistered(Player player) {
         if (targets.containsKey(player.getUniqueId())) {

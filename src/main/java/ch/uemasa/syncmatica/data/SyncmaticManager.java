@@ -23,6 +23,9 @@ import java.util.logging.Logger;
  * In-memory registry of placements with JSON persistence ({@code placements.json}). Saves run on every
  * add/remove and on shutdown, with a {@code .new}/{@code .bak} rotation so a crash mid-write cannot
  * corrupt the live file.
+ *
+ * <p>Mutations all run on the single protocol thread, but reads can arrive off it (command
+ * tab-completion runs on the caller's region thread), so the public accessors are {@code synchronized}.
  */
 public final class SyncmaticManager {
 
@@ -40,28 +43,28 @@ public final class SyncmaticManager {
         this.logger = logger;
     }
 
-    public ServerPlacement get(UUID id) {
+    public synchronized ServerPlacement get(UUID id) {
         return placements.get(id);
     }
 
-    public boolean contains(UUID id) {
+    public synchronized boolean contains(UUID id) {
         return placements.containsKey(id);
     }
 
-    public Collection<ServerPlacement> getAll() {
+    public synchronized Collection<ServerPlacement> getAll() {
         return new ArrayList<>(placements.values());
     }
 
-    public int size() {
+    public synchronized int size() {
         return placements.size();
     }
 
-    public void addPlacement(ServerPlacement placement) {
+    public synchronized void addPlacement(ServerPlacement placement) {
         placements.put(placement.getId(), placement);
         save();
     }
 
-    public ServerPlacement removePlacement(UUID id) {
+    public synchronized ServerPlacement removePlacement(UUID id) {
         ServerPlacement removed = placements.remove(id);
         if (removed != null) {
             save();
@@ -71,7 +74,7 @@ public final class SyncmaticManager {
 
     // ---- persistence ----
 
-    public void load() {
+    public synchronized void load() {
         if (!Files.isRegularFile(file)) {
             return;
         }
@@ -93,7 +96,7 @@ public final class SyncmaticManager {
         }
     }
 
-    public void save() {
+    public synchronized void save() {
         try {
             Files.createDirectories(file.getParent());
             JsonArray arr = new JsonArray();
@@ -253,7 +256,7 @@ public final class SyncmaticManager {
         return a;
     }
 
-    public List<String> debugList() {
+    public synchronized List<String> debugList() {
         List<String> out = new ArrayList<>();
         for (ServerPlacement p : placements.values()) {
             out.add(p.getId() + " " + p.getDisplayName());
