@@ -9,10 +9,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,12 +31,14 @@ final class PaperServer implements AutoCloseable {
     private static final long STARTUP_TIMEOUT_SECONDS = 300;
 
     private final Process process;
+    private final Path dir;
     private final int port;
     private final List<String> output = new ArrayList<>();
     private final CountDownLatch ready = new CountDownLatch(1);
 
-    private PaperServer(Process process, int port) {
+    private PaperServer(Process process, Path dir, int port) {
         this.process = process;
+        this.dir = dir;
         this.port = port;
         Thread reader = new Thread(this::pump, "paper-output");
         reader.setDaemon(true);
@@ -46,6 +50,10 @@ final class PaperServer implements AutoCloseable {
         if (!Files.isRegularFile(dir.resolve("paper.jar"))) {
             throw new IllegalStateException("Paper server not prepared; run through the runClientGameTest task");
         }
+        // Every test starts from a fresh world and empty plugin data.
+        for (String name : List.of("world", "world_nether", "world_the_end", "plugins/SyncmaticaPaper")) {
+            deleteRecursively(dir.resolve(name));
+        }
         int port = freePort();
         // Same JVM binary as the client, which already runs the Java version this Minecraft needs.
         String java = ProcessHandle.current().info().command().orElse("java");
@@ -53,7 +61,7 @@ final class PaperServer implements AutoCloseable {
                 .directory(dir.toFile())
                 .redirectErrorStream(true)
                 .start();
-        PaperServer server = new PaperServer(process, port);
+        PaperServer server = new PaperServer(process, dir, port);
         Runtime.getRuntime().addShutdownHook(new Thread(process::destroyForcibly));
         if (!server.ready.await(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             server.close();
@@ -64,6 +72,11 @@ final class PaperServer implements AutoCloseable {
 
     int port() {
         return port;
+    }
+
+    /** The plugin's data folder on the server. */
+    Path pluginData() {
+        return dir.resolve("plugins/SyncmaticaPaper");
     }
 
     /** Lines the server has printed so far that match {@code filter}. */
@@ -87,6 +100,17 @@ final class PaperServer implements AutoCloseable {
             }
         } catch (IOException ignored) {
             // process went away
+        }
+    }
+
+    private static void deleteRecursively(Path path) throws IOException {
+        if (!Files.exists(path)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(path)) {
+            for (Path p : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(p);
+            }
         }
     }
 

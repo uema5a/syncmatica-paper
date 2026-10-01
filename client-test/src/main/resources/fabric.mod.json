@@ -5,10 +5,14 @@
   "name": "SyncmaticaPaper client test",
   "environment": "client",
   "entrypoints": {
-    "fabric-client-gametest": ["ch.uemasa.syncmatica.clienttest.ConnectivityTest"]
+    "fabric-client-gametest": [
+      "ch.uemasa.syncmatica.clienttest.ConnectivityTest",
+      "ch.uemasa.syncmatica.clienttest.LitematicaRoundTripTest"
+    ]
   },
   "depends": {
     "fabric-client-gametest-api-v1": "*",
-    "syncmatica": "*"
+    "syncmatica": "*",
+    "litematica": "*"
   }
 }

@@ -19,11 +19,11 @@ dependencies {
     implementation("net.fabricmc:fabric-loader:${property("loader_version")}")
     implementation("net.fabricmc.fabric-api:fabric-api:${property("fabric_api_version")}")
 
-    // The unmodified client stack a player would run. Syncmatica is on the compile classpath so the
-    // test can read its client state directly instead of scraping logs.
+    // The unmodified client stack a player would run. It's on the compile classpath so the tests can
+    // drive the same code paths the in-game buttons use and read client state directly.
     implementation("maven.modrinth:syncmatica:${property("syncmatica_version")}")
-    runtimeOnly("maven.modrinth:litematica:${property("litematica_version")}")
-    runtimeOnly("maven.modrinth:malilib:${property("malilib_version")}")
+    implementation("maven.modrinth:litematica:${property("litematica_version")}")
+    implementation("maven.modrinth:malilib:${property("malilib_version")}")
 }
 
 java {
@@ -66,9 +66,8 @@ val preparePaperServer = tasks.register("preparePaperServer") {
             }
         }
 
-        // Fresh world and plugin data every run; keep Paper's own caches.
-        listOf("world", "world_nether", "world_the_end", "plugins").forEach { root.resolve(it).deleteRecursively() }
-        val plugins = root.resolve("plugins").apply { mkdirs() }
+        // Swap in the current plugin build. Worlds and plugin data are reset by each test itself.
+        val plugins = root.resolve("plugins").apply { deleteRecursively(); mkdirs() }
         val jar = pluginLibs.listFiles { f -> f.name.endsWith(".jar") }!!.maxByOrNull { it.lastModified() }
             ?: throw GradleException("No plugin jar in ../build/libs")
         jar.copyTo(plugins.resolve("SyncmaticaPaper.jar"), overwrite = true)
