@@ -18,3 +18,10 @@ bin/
 # OS
 .DS_Store
 Thumbs.db
+
+# Client gametest. Loom and the test server write under client-test/build/, which is already
+# ignored; these catch anything that lands next to it.
+client-test/run/
+client-test/logs/
+client-test/crash-reports/
+client-test/screenshots/

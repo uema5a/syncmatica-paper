@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "syncmatica-client-test",
+  "version": "0.0.0",
+  "name": "SyncmaticaPaper client test",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "ch.uemasa.syncmatica.clienttest.ConnectivityTest",
+      "ch.uemasa.syncmatica.clienttest.LitematicaRoundTripTest"
+    ]
+  },
+  "mixins": ["syncmatica-client-test.mixins.json"],
+  "depends": {
+    "fabric-client-gametest-api-v1": "*",
+    "syncmatica": "*",
+    "litematica": "*"
+  }
+}
