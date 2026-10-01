@@ -123,6 +123,13 @@ final class PaperServer implements AutoCloseable {
         return dir.resolve("plugins/SyncmaticaPaper");
     }
 
+    /** Runs a command on the server console. */
+    void command(String command) throws IOException {
+        OutputStream stdin = process.getOutputStream();
+        stdin.write((command + "\n").getBytes(StandardCharsets.UTF_8));
+        stdin.flush();
+    }
+
     /** Lines the server has printed so far that match {@code filter}. */
     List<String> lines(Predicate<String> filter) {
         synchronized (output) {
