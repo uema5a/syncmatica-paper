@@ -2,7 +2,7 @@
 
 # Syncmatica protocol version advertised to clients during the handshake.
 # Must not reduce to "0.1" (client skips feature negotiation) or be "0.0.1".
-protocol-version: "0.3.18"
+protocol-version: "0.3.20"
 
 # Protocol features advertised to clients; CORE is always implied.
 features:

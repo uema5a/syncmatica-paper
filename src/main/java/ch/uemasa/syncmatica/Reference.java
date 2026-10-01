@@ -17,7 +17,7 @@ public final class Reference {
     // The Syncmatica release whose protocol this is compatible with. Must not reduce to "0.1"
     // (the client hard-codes that to CORE-only, skipping feature negotiation) nor equal the
     // "0.0.1" too-old sentinel.
-    public static final String DEFAULT_MOD_VERSION = "0.3.18";
+    public static final String DEFAULT_MOD_VERSION = "0.3.20";
 
     /** The client's "incompatible / too old" sentinel; the only version rejected on join. */
     public static final String INCOMPATIBLE_VERSION = "0.0.1";
