@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "ch.uemasa.syncmatica.clienttest.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["ConnectionMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

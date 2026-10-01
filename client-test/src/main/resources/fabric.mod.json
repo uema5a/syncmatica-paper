@@ -10,6 +10,7 @@
       "ch.uemasa.syncmatica.clienttest.LitematicaRoundTripTest"
     ]
   },
+  "mixins": ["syncmatica-client-test.mixins.json"],
   "depends": {
     "fabric-client-gametest-api-v1": "*",
     "syncmatica": "*",
