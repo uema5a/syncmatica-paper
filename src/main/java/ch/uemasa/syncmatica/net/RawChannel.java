@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.Executor;
 import java.util.logging.Logger;
 
 /**
@@ -28,6 +29,14 @@ import java.util.logging.Logger;
  *   <li>the data-carrying {@code DiscardedPayload} constructor — {@code (id, byte[])} since 1.21.5, but
  *       {@code (id, ByteBuf)} on 1.21.4 and earlier.</li>
  * </ul>
+ *
+ * <p>The client only understands Syncmatica packets during the play phase; one that arrives while it
+ * is in the configuration phase crashes its connection. Players can be sent back to configuration
+ * mid-game (proxies, resource pack and login plugins do it), and the server marks the connection as
+ * leaving play before it queues the switch. So every send is made from the connection's own event
+ * loop and only goes out if the connection is still accepting play packets and is still the one the
+ * player had when the send was requested. Checking there keeps the check and the write in order with
+ * the switch, without waiting for a server tick.
  */
 public final class RawChannel {
 
@@ -44,6 +53,11 @@ public final class RawChannel {
     private static final Method GET_HANDLE;
     private static final Field CONNECTION_FIELD;
     private static final Method SEND;
+    /** The game listener's network {@code Connection}, and that connection's Netty channel. */
+    private static final Field NETWORK_CONNECTION;
+    private static final Field NETTY_CHANNEL;
+    /** {@code ServerGamePacketListenerImpl#isAcceptingMessages()}: false once a switch to configuration has started. */
+    private static final Method ACCEPTING_MESSAGES;
 
     static {
         boolean ok = false;
@@ -55,6 +69,9 @@ public final class RawChannel {
         Method getHandle = null;
         Field connection = null;
         Method send = null;
+        Field networkConnection = null;
+        Field nettyChannel = null;
+        Method acceptingMessages = null;
         try {
             // Resource-id class: 1.21.x = ResourceLocation, 2026 = Identifier. Both expose a static
             // parse(String) (older builds only tryParse), returning the same instance type.
@@ -97,6 +114,20 @@ public final class RawChannel {
             LOGGER.severe("Syncmatica: could not wire the NMS custom-payload transport; "
                     + "the plugin will not reach clients. " + t);
         }
+        if (ok) {
+            try {
+                Class<?> gameListener = connection.getType();
+                networkConnection = findField(gameListener, "connection");
+                nettyChannel = findField(networkConnection.getType(), "channel");
+                acceptingMessages = gameListener.getMethod("isAcceptingMessages");
+            } catch (Throwable t) {
+                networkConnection = null;
+                nettyChannel = null;
+                acceptingMessages = null;
+                LOGGER.warning("Syncmatica: could not wire the play-phase check; packets may reach players "
+                        + "who are being sent back to configuration and crash their connection. " + t);
+            }
+        }
         AVAILABLE = ok;
         CHANNEL_ID = channelId;
         DISCARDED_CTOR = discardedCtor;
@@ -106,6 +137,23 @@ public final class RawChannel {
         GET_HANDLE = getHandle;
         CONNECTION_FIELD = connection;
         SEND = send;
+        NETWORK_CONNECTION = networkConnection;
+        NETTY_CHANNEL = nettyChannel;
+        ACCEPTING_MESSAGES = acceptingMessages;
+    }
+
+    /** Finds a declared field on {@code type} or one of its superclasses and makes it accessible. */
+    private static Field findField(Class<?> type, String name) throws NoSuchFieldException {
+        for (Class<?> c = type; c != null; c = c.getSuperclass()) {
+            try {
+                Field field = c.getDeclaredField(name);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+                // look further up
+            }
+        }
+        throw new NoSuchFieldException(type.getName() + "." + name);
     }
 
     /** Returns the first of {@code names} that resolves, so one build runs across renamed NMS classes. */
@@ -143,9 +191,31 @@ public final class RawChannel {
                     ? DISCARDED_CTOR.newInstance(CHANNEL_ID, data)
                     : DISCARDED_CTOR.newInstance(CHANNEL_ID, WRAP_BUFFER.invoke(null, (Object) data));
             Object packet = PACKET_CTOR.newInstance(payload);
-            SEND.invoke(connection, packet);
+            if (ACCEPTING_MESSAGES == null) {
+                SEND.invoke(connection, packet);
+                return;
+            }
+            Object channel = NETTY_CHANNEL.get(NETWORK_CONNECTION.get(connection));
+            Executor eventLoop = (Executor) channel.getClass().getMethod("eventLoop").invoke(channel);
+            eventLoop.execute(() -> sendIfStillPlaying(handle, connection, packet));
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Syncmatica raw send failed", e);
+        }
+    }
+
+    /**
+     * Runs on the connection's event loop. A switch to configuration marks the listener as no longer
+     * accepting messages before it queues the switch here, so anything that still sees it accepting
+     * is written ahead of the switch. A reconfigured player comes back with a new listener; packets
+     * meant for the old one are dropped, since that session is gone on both ends.
+     */
+    private static void sendIfStillPlaying(Object handle, Object connection, Object packet) {
+        try {
+            if (CONNECTION_FIELD.get(handle) == connection && (boolean) ACCEPTING_MESSAGES.invoke(connection)) {
+                SEND.invoke(connection, packet);
+            }
+        } catch (ReflectiveOperationException e) {
+            LOGGER.warning("Syncmatica raw send failed: " + e);
         }
     }
 }
