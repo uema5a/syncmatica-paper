@@ -11,6 +11,7 @@ plugins {
 val minecraftVersion = property("minecraft_version") as String
 
 repositories {
+    maven("https://repo.papermc.io/repository/maven-public/") { name = "PaperMC" }
     exclusiveContent {
         forRepository { maven("https://api.modrinth.com/maven") { name = "Modrinth" } }
         filter { includeGroup("maven.modrinth") }
@@ -27,6 +28,18 @@ dependencies {
     implementation("maven.modrinth:syncmatica:${property("syncmatica_version")}")
     implementation("maven.modrinth:litematica:${property("litematica_version")}")
     implementation("maven.modrinth:malilib:${property("malilib_version")}")
+}
+
+// Test hooks that run inside the Paper server (see SyncTestHelper). Built against the Paper API
+// only; never shipped.
+val helper: SourceSet by sourceSets.creating
+dependencies {
+    "helperCompileOnly"("io.papermc.paper:paper-api:${property("paper_api_version")}")
+}
+val helperJar = tasks.register<Jar>("helperJar") {
+    from(helper.output)
+    archiveFileName.set("SyncTestHelper.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("helper"))
 }
 
 java {
@@ -49,6 +62,8 @@ val serverDir = layout.buildDirectory.dir("paper-server/$minecraftVersion")
 
 val preparePaperServer = tasks.register("preparePaperServer") {
     dependsOn(gradle.includedBuild("syncmatica-paper").task(":shadowJar"))
+    dependsOn(helperJar)
+    val helperFile = helperJar.flatMap { it.archiveFile }
     val dir = serverDir
     val mc = minecraftVersion
     val paperBuild = project.property("paper_build") as String
@@ -73,6 +88,7 @@ val preparePaperServer = tasks.register("preparePaperServer") {
         }
         val plugins = root.resolve("plugins").apply { deleteRecursively(); mkdirs() }
         pluginJar.copyTo(plugins.resolve("SyncmaticaPaper.jar"))
+        helperFile.get().asFile.copyTo(plugins.resolve("SyncTestHelper.jar"))
         // Keep the test server from reporting usage stats on every run.
         plugins.resolve("bStats").apply { mkdirs() }.resolve("config.yml")
             .writeText("enabled: false\nserverUuid: 00000000-0000-0000-0000-000000000000\nlogFailedRequests: false\n")

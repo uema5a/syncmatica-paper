@@ -1,0 +1,13 @@
+name: SyncTestHelper
+version: '0'
+main: ch.uemasa.syncmatica.clienttest.helper.SyncTestHelper
+api-version: '1.21'
+depend: [SyncmaticaPaper]
+description: Test hooks for the SyncmaticaPaper client tests. Never install this on a real server.
+commands:
+  synctest:
+    description: Client test hooks.
+    permission: synctest.use
+permissions:
+  synctest.use:
+    default: op
