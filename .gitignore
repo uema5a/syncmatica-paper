@@ -18,3 +18,25 @@ bin/
 # OS
 .DS_Store
 Thumbs.db
+
+# Client gametest: per-version client/server run dirs, logs, crash reports,
+# screenshots and downloaded server jars must never be committed.
+client-test/run*/
+logs/
+crash-reports/
+screenshots/
+*.log
+.loom-cache/
+remappedSrc/
+out/
+
+# Client gametest: per-version client/server run dirs, logs, crash reports,
+# screenshots and downloaded server jars must never be committed.
+client-test/run*/
+logs/
+crash-reports/
+screenshots/
+*.log
+.loom-cache/
+remappedSrc/
+out/
