@@ -1,0 +1,61 @@
+name: Release
+
+# Publishing a GitHub release builds the jar from its tag, attaches it to the release and publishes the
+# same jar to Modrinth, with the release notes as the changelog.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Forks have no Modrinth token and shouldn't publish anyway.
+    if: github.repository_owner == 'uema5a'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach the jar to the release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # The tag and gradle.properties have to agree, or Modrinth and the jar name would disagree.
+      - name: Check version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(grep '^version=' gradle.properties | cut -d= -f2)
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match version $version in gradle.properties"
+            exit 1
+          fi
+
+      - name: Build
+        run: ./gradlew build
+
+      - name: Attach jar to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" build/libs/syncmatica-paper-*.jar --clobber
+
+      # Modrinth already shows the requirements and how to install, so leave those lines out there.
+      - name: Publish to Modrinth
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          RELEASE_NOTES: ${{ github.event.release.body }}
+        run: |
+          export MODRINTH_CHANGELOG="$(printf '%s\n' "$RELEASE_NOTES" | tr -d '\r' | grep -v -e '^\*\*Requires:\*\*' -e '^Install:' | cat -s)"
+          ./gradlew modrinth modrinthSyncBody

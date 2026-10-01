@@ -4,6 +4,8 @@ plugins {
     id("xyz.jpenilla.run-paper") version "3.0.2"
     // Builds a shaded/relocatable fat-jar so bundled libs don't clash with other plugins.
     id("com.gradleup.shadow") version "9.4.2"
+    // Publishes releases to Modrinth (run by the release workflow).
+    id("com.modrinth.minotaur") version "2.10.0"
 }
 
 group = property("group") as String
@@ -80,4 +82,30 @@ tasks {
         // The Paper version the dev server will download and launch.
         minecraftVersion("1.21.1")
     }
+}
+
+modrinth {
+    token.set(providers.environmentVariable("MODRINTH_TOKEN"))
+    projectId.set("syncmatica-paper")
+    versionNumber.set(project.version.toString())
+    versionName.set("Syncmatica Paper ${project.version}")
+    versionType.set("release")
+    uploadFile.set(tasks.shadowJar)
+    // Every release the one jar runs on (see the dependencies block above).
+    gameVersions.addAll(
+        "1.20.6",
+        "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9",
+        "1.21.10", "1.21.11",
+        "26.1", "26.1.1", "26.1.2", "26.2", "26.3",
+    )
+    loaders.addAll("paper", "purpur", "folia")
+    changelog.set(providers.environmentVariable("MODRINTH_CHANGELOG").orElse(""))
+    syncBodyFrom.set(provider { file(".github/modrinth.md").readText() })
+    // ./gradlew modrinth -PmodrinthDryRun prints what would be published without uploading.
+    debugMode.set(providers.gradleProperty("modrinthDryRun").isPresent)
+}
+
+// Minotaur reads the project while its tasks run, which the configuration cache doesn't allow.
+listOf("modrinth", "modrinthSyncBody").forEach { name ->
+    tasks.named(name) { notCompatibleWithConfigurationCache("Minotaur reads the project at execution time") }
 }
