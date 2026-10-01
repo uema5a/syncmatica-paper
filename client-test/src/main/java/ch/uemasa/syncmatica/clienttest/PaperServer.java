@@ -20,8 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A real Paper server running the plugin under test, started as a child process for the length of
- * one test. The server directory is prepared by the {@code preparePaperServer} Gradle task.
+ * A real Paper server running the plugin under test, started as a child process. The server
+ * directory is prepared by the {@code preparePaperServer} Gradle task.
  */
 final class PaperServer implements AutoCloseable {
 
@@ -29,10 +29,13 @@ final class PaperServer implements AutoCloseable {
 
     // The first start downloads and patches the vanilla server, so give it room.
     private static final long STARTUP_TIMEOUT_SECONDS = 300;
+    private static final int BIND_ATTEMPTS = 3;
 
     private final Process process;
     private final Path dir;
     private final int port;
+    private final Thread reader;
+    private final Thread killOnExit;
     private final List<String> output = new ArrayList<>();
     private final CountDownLatch ready = new CountDownLatch(1);
 
@@ -40,34 +43,75 @@ final class PaperServer implements AutoCloseable {
         this.process = process;
         this.dir = dir;
         this.port = port;
-        Thread reader = new Thread(this::pump, "paper-output");
+        // Registered before anything else can throw, so a failed start never leaves a server behind.
+        this.killOnExit = new Thread(() -> kill(process));
+        Runtime.getRuntime().addShutdownHook(killOnExit);
+        this.reader = new Thread(this::pump, "paper-output");
         reader.setDaemon(true);
         reader.start();
     }
 
+    /** Starts a server on a fresh world with empty plugin data. */
     static PaperServer start() throws IOException, InterruptedException {
+        return start(true);
+    }
+
+    /**
+     * Stops this server and starts it again on the same world and plugin data, so whatever the
+     * plugin saved to disk has to be loaded back.
+     */
+    PaperServer restart() throws IOException, InterruptedException {
+        close();
+        return start(false);
+    }
+
+    private static PaperServer start(boolean fresh) throws IOException, InterruptedException {
         Path dir = Path.of(System.getProperty("syncmatica.test.serverDir"));
         if (!Files.isRegularFile(dir.resolve("paper.jar"))) {
             throw new IllegalStateException("Paper server not prepared; run through the runClientGameTest task");
         }
-        // Every test starts from a fresh world and empty plugin data.
-        for (String name : List.of("world", "world_nether", "world_the_end", "plugins/SyncmaticaPaper")) {
-            deleteRecursively(dir.resolve(name));
+        if (fresh) {
+            for (String name : List.of("world", "world_nether", "world_the_end", "plugins/SyncmaticaPaper")) {
+                deleteRecursively(dir.resolve(name));
+            }
         }
-        int port = freePort();
+        // The port is only reserved until the probe socket closes, so retry if someone grabs it first.
+        for (int attempt = 1; ; attempt++) {
+            PaperServer server = launch(dir, freePort());
+            try {
+                server.awaitReady();
+                return server;
+            } catch (IllegalStateException e) {
+                server.close();
+                boolean bindFailure = !server.lines(l -> l.contains("FAILED TO BIND")).isEmpty();
+                if (!bindFailure || attempt == BIND_ATTEMPTS) {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private static PaperServer launch(Path dir, int port) throws IOException {
         // Same JVM binary as the client, which already runs the Java version this Minecraft needs.
         String java = ProcessHandle.current().info().command().orElse("java");
         Process process = new ProcessBuilder(java, "-Xmx1G", "-jar", "paper.jar", "--nogui", "--port", Integer.toString(port))
                 .directory(dir.toFile())
                 .redirectErrorStream(true)
                 .start();
-        PaperServer server = new PaperServer(process, dir, port);
-        Runtime.getRuntime().addShutdownHook(new Thread(process::destroyForcibly));
-        if (!server.ready.await(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            server.close();
-            throw new IllegalStateException("Paper did not finish starting within " + STARTUP_TIMEOUT_SECONDS + "s");
+        return new PaperServer(process, dir, port);
+    }
+
+    private void awaitReady() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(STARTUP_TIMEOUT_SECONDS);
+        while (!ready.await(1, TimeUnit.SECONDS)) {
+            if (!process.isAlive()) {
+                reader.join(5_000);
+                throw new IllegalStateException("Paper exited during startup (code " + process.exitValue() + "):\n" + tail(50));
+            }
+            if (System.nanoTime() > deadline) {
+                throw new IllegalStateException("Paper did not finish starting within " + STARTUP_TIMEOUT_SECONDS + "s:\n" + tail(50));
+            }
         }
-        return server;
     }
 
     int port() {
@@ -83,6 +127,12 @@ final class PaperServer implements AutoCloseable {
     List<String> lines(Predicate<String> filter) {
         synchronized (output) {
             return output.stream().filter(filter).toList();
+        }
+    }
+
+    private String tail(int count) {
+        synchronized (output) {
+            return String.join("\n", output.subList(Math.max(0, output.size() - count), output.size()));
         }
     }
 
@@ -103,6 +153,11 @@ final class PaperServer implements AutoCloseable {
         }
     }
 
+    private static void kill(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+    }
+
     private static void deleteRecursively(Path path) throws IOException {
         if (!Files.exists(path)) {
             return;
@@ -120,21 +175,32 @@ final class PaperServer implements AutoCloseable {
         }
     }
 
+    /** Stops the server gracefully, falling back to a hard kill, and waits for its last log lines. */
     @Override
     public void close() {
-        if (!process.isAlive()) {
-            return;
-        }
         try {
-            OutputStream stdin = process.getOutputStream();
-            stdin.write("stop\n".getBytes(StandardCharsets.UTF_8));
-            stdin.flush();
-            if (process.waitFor(60, TimeUnit.SECONDS)) {
-                return;
+            if (process.isAlive()) {
+                try {
+                    OutputStream stdin = process.getOutputStream();
+                    stdin.write("stop\n".getBytes(StandardCharsets.UTF_8));
+                    stdin.flush();
+                } catch (IOException ignored) {
+                    // stdin already closed; the kill below takes care of it
+                }
+                if (!process.waitFor(60, TimeUnit.SECONDS)) {
+                    kill(process);
+                }
             }
-        } catch (IOException | InterruptedException ignored) {
-            // fall through to a hard kill
+            reader.join(5_000);
+        } catch (InterruptedException e) {
+            kill(process);
+            Thread.currentThread().interrupt();
+        } finally {
+            try {
+                Runtime.getRuntime().removeShutdownHook(killOnExit);
+            } catch (IllegalStateException ignored) {
+                // JVM is already shutting down; the hook runs anyway
+            }
         }
-        process.destroyForcibly();
     }
 }
